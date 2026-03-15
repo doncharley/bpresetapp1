@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BP Reset App</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            red: '#ef4444',
+                            blue: '#3b82f6',
+                            dark: '#1e293b',
+                            light: '#f8fafc'
+                        }
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'gauge-fill': 'gaugeFill 1s ease-out forwards'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- jsPDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        /* Custom Styles & Animations */
+        body {
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Input Placeholder Styling */
+        input::placeholder {
+            color: #94a3b8; /* slate-400 */
+            opacity: 1;
+        }
+        .dark input::placeholder {
+            color: #ffffff; /* Solid white for dark mode */
+        }
+
+        .gauge-container {
+            position: relative;
+            width: 200px;
+            height: 100px; /* Half circle */
+            overflow: hidden;
+            margin: 0 auto;
+        }
+
+        .gauge-arc {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: conic-gradient(
+                #ef4444 0deg 90deg,
+                #f59e0b 90deg 135deg,
+                #22c55e 135deg 225deg,
+                #f59e0b 225deg 270deg,
+                #ef4444 270deg 360deg
+            );
+            transform: rotate(-90deg);
+        }
+
+        .gauge-mask {
+            position: absolute;
+            top: 25px;
+            left: 25px;
+            width: 150px;
+            height: 150px;
+            background-color: inherit; /* Matches body bg */
+            border-radius: 50%;
+            z-index: 1;
+        }
+
+        .gauge-needle {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 4px;
+            height: 90px;
+            background-color: #333;
+            transform-origin: bottom center;
+            transform: rotate(-90deg); /* Start position */
+            transition: transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 2;
+            border-radius: 2px;
+        }
+
+        .gauge-center {
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 20px;
+            background-color: #333;
+            border-radius: 50%;
+            z-index: 3;
+        }
+
+        /* Dark mode specific overrides for gauge mask */
+        .dark .gauge-mask {
+            background-color: #1e293b;
+        }
+        .light .gauge-mask {
+            background-color: #f8fafc;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+
+        /* Button active states */
+        button:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body class="bg-brand-light text-slate-800 dark:bg-slate-900 dark:text-slate-100 min-h-screen flex flex-col font-sans">
+
+    <!-- Header -->
+    <header class="w-full p-6 flex justify-between items-center border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-50">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-brand-red rounded-full flex items-center justify-center text-white shadow-lg">
+                <i class="fa-solid fa-heart-pulse"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight">BP Reset App</h1>
+                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Monitor • Analyze • Reset</p>
+            </div>
+        </div>
+        <button id="themeToggle" class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors" aria-label="Toggle theme">
+            <i class="fa-solid fa-moon dark:hidden text-slate-600"></i>
+            <i class="fa-solid fa-sun hidden dark:block text-yellow-400"></i>
+        </button>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto p-4 md:p-6 max-w-4xl space-y-6">
+
+        <!-- Dashboard Card -->
+        <div class="bg-white dark:bg-slate-800 rounded-3xl shadow-xl overflow-hidden border border-slate-100 dark:border-slate-700">
+            
+            <!-- Status Header -->
+            <div id="statusBanner" class="bg-brand-blue text-white p-4 text-center transition-colors duration-500">
+                <h2 class="text-lg font-semibold opacity-90">Current Status</h2>
+                <div class="text-2xl font-bold mt-1" id="statusText">Normal</div>
+            </div>
+
+            <div class="p-6 md:p-8 flex flex-col items-center">
+                
+                <!-- Gauge & Readings -->
+                <div class="relative w-full flex flex-col md:flex-row items-center justify-center gap-8 mb-8">
+                    
+                    <!-- Gauge -->
+                    <div class="gauge-container">
+                        <div class="gauge-arc"></div>
+                        <div class="gauge-mask"></div>
+                        <div class="gauge-needle" id="gaugeNeedle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+
+                    <!-- Numbers -->
+                    <div class="text-center md:text-left space-y-2">
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-6xl font-bold text-slate-800 dark:text-white" id="displaySys">120</span>
+                            <span class="text-2xl text-slate-400">/</span>
+                            <span class="text-4xl font-bold text-slate-600 dark:text-slate-300" id="displayDia">80</span>
+                        </div>
+                        <div class="flex items-center gap-2 justify-center md:justify-start text-slate-500 dark:text-slate-400">
+                            <i class="fa-solid fa-heart text-brand-red animate-pulse-slow"></i>
+                            <span class="text-xl font-medium"><span id="displayHr">72</span> <span class="text-sm">BPM</span></span>
+                        </div>
+                        <div class="text-sm text-slate-400 mt-2" id="displayDate">Just now</div>
+                    </div>
+                </div>
+
+                <!-- Emoji Indicator -->
+                <div class="text-6xl mb-6 animate-bounce" id="statusEmoji">😐</div>
+
+                <!-- Input Form -->
+                <div class="w-full max-w-md bg-slate-50 dark:bg-slate-700/50 rounded-2xl p-5 border border-slate-200 dark:border-slate-600">
+                    <h3 class="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 text-center">Log New Reading</h3>
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <div>
+                            <label class="block text-xs text-slate-500 mb-1">Systolic</label>
+                            <input type="number" id="inputSys" placeholder="120" class="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-brand-blue outline-none text-center font-bold text-slate-800 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-500 mb-1">Diastolic</label>
+                            <input type="number" id="inputDia" placeholder="80" class="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-brand-blue outline-none text-center font-bold text-slate-800 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-slate-500 mb-1">Heart Rate</label>
+                            <input type="number" id="inputHr" placeholder="72" class="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-brand-blue outline-none text-center font-bold text-slate-800 dark:text-white">
+                        </div>
+                    </div>
+                    <button id="logBtn" class="w-full bg-brand-red hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-lg hover:shadow-red-500/30 transition-all transform active:scale-95 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-plus"></i> Log Reading
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- Navigation Controls -->
+            <div class="bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-700 p-4 flex justify-between items-center">
+                <button id="prevBtn" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    <i class="fa-solid fa-chevron-left"></i> Previous
+                </button>
+                <span class="text-xs font-medium text-slate-400" id="recordCount">Record 1 of 1</span>
+                <button id="nextBtn" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    Next <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Smart Insights Engine -->
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6 border-l-4 border-brand-blue" id="insightsCard">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 text-brand-blue flex items-center justify-center">
+                    <i class="fa-solid fa-lightbulb"></i>
+                </div>
+                <h3 class="text-lg font-bold">Smart Insights</h3>
+            </div>
+            <div id="insightsContent" class="space-y-2 text-slate-600 dark:text-slate-300 text-sm leading-relaxed">
+                <!-- Dynamic Content -->
+                <p>Loading insights...</p>
+            </div>
+        </div>
+
+        <!-- Weekly Trend Graph -->
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6">
+            <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-chart-line text-brand-blue"></i> Weekly Trend
+            </h3>
+            <!-- Added bg-white dark:bg-black to canvas container -->
+            <div class="h-64 w-full bg-white dark:bg-black rounded-lg p-2">
+                <canvas id="bpChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Export Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button id="exportPdfBtn" class="p-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center gap-3 transition-colors group">
+                <i class="fa-solid fa-file-pdf text-red-500 text-xl group-hover:scale-110 transition-transform"></i>
+                <span class="font-medium">Download PDF Report</span>
+            </button>
+            <button id="exportCsvBtn" class="p-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center gap-3 transition-colors group">
+                <i class="fa-solid fa-file-csv text-green-500 text-xl group-hover:scale-110 transition-transform"></i>
+                <span class="font-medium">Download CSV Data</span>
+            </button>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <!-- Added px-6 for adequate left and right spacing -->
+    <footer class="mt-auto py-6 text-center text-xs text-slate-400 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6">
+        <p>&copy; 2026 BP Reset App. For informational purposes only. Consult a doctor for medical advice.</p>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- State Management ---
+        let readings = [];
+        let currentIndex = -1;
+        let chartInstance = null;
+
+        // --- Audio Context for Sounds ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            if (type === 'click') {
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.05);
+            } else if (type === 'success') {
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(500, audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.3);
+            } else if (type === 'alert') {
+                oscillator.type = 'sawtooth';
+                oscillator.frequency.setValueAtTime(200, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.2);
+            }
+        }
+
+        // --- Core Logic ---
+
+        function getStatus(sys, dia) {
+            if (sys < 90 || dia < 60) return 'Low';
+            if (sys < 120 && dia < 80) return 'Normal';
+            if (sys >= 120 && sys <= 129 && dia < 80) return 'Elevated';
+            if ((sys >= 130 && sys <= 139) || (dia >= 80 && dia <= 89)) return 'High Stage 1';
+            if (sys >= 140 || dia >= 90) return 'High Stage 2';
+            return 'Normal'; // Fallback
+        }
+
+        function getInsights(status) {
+            const base = "Recommendations:";
+            switch(status) {
+                case 'Low':
+                    return `${base}<ul class="list-disc pl-5 mt-2 space-y-1">
+                        <li>Eat more meat for the next two days.</li>
+                        <li>Eat spicy or peppery meal once.</li>
+                        <li>Drink enough water during meals.</li>
+                        <li>Go for a mild walk for 10 - 15min.</li>
+                        <li>Avoid banana, scent leaves, bitterleaves, and ginger.</li>
+                    </ul>`;
+                case 'Normal':
+                    return `${base}<ul class="list-disc pl-5 mt-2 space-y-1">
+                        <li>Maintain a balanced and healthy diet.</li>
+                    </ul>`;
+                case 'Elevated':
+                    return `${base}<ul class="list-disc pl-5 mt-2 space-y-1">
+                        <li>Eat fruits for lunch for the next two days.</li>
+                        <li>Drink water after waking up, during meals and before bedtime.</li>
+                        <li>Rest in the afternoon when the sun is hot.</li>
+                        <li>Eat more fish, vegetables and onions with your meals.</li>
+                        <li>Avoid caffeine, alcohol and carbonates soft drinks.</li>
+                    </ul>`;
+                case 'High Stage 1':
+                    return `${base}<ul class="list-disc pl-5 mt-2 space-y-1">
+                        <li>Take any of the urgent natural stabilizers for 1 day or take your prescribed drugs.</li>
+                        <li>Eat fruits for lunch for the next two days.</li>
+                        <li>Drink water after waking up, during meals and before bedtime.</li>
+                        <li>Rest in the afternoon when the sun is hot.</li>
+                        <li>Eat more fish, vegetables and onions with your meals.</li>
+                        <li>Drink one teaspoon of olive oil at night before going to bed.</li>
+                        <li>Avoid caffeine, bread, eggs, kolanut, alcohol and carbonates soft drinks.</li>
+                    </ul>`;
+                case 'High Stage 2':
+                    return `${base}<ul class="list-disc pl-5 mt-2 space-y-1">
+                        <li>Take any of the urgent natural stabilizers for 1 - 3 days or take your prescribed drugs.</li>
+                        <li>Eat fruits for lunch for the next 4 days.</li>
+                        <li>Drink water after waking up, during meals and before bedtime.</li>
+                        <li>Rest in the afternoon when the sun is hot.</li>
+                        <li>Eat more fish, vegetables, onions with your meals.</li>
+                        <li>Drink two teaspoon of olive oil at night before going to bed.</li>
+                        <li>Avoid caffeine, bread, meat, eggs, kolanut, ginger, alcohol and carbonates soft drinks.</li>
+                    </ul>`;
+                default:
+                    return "Consult a doctor.";
+            }
+        }
+
+        function getStyleConfig(status) {
+            switch(status) {
+                case 'Low': return { color: 'bg-slate-500', text: 'text-slate-500', emoji: '🥶', needleDeg: -60 };
+                case 'Normal': return { color: 'bg-emerald-500', text: 'text-emerald-500', emoji: '😌', needleDeg: 0 };
+                case 'Elevated': return { color: 'bg-amber-500', text: 'text-amber-500', emoji: '😐', needleDeg: 45 };
+                case 'High Stage 1': return { color: 'bg-orange-600', text: 'text-orange-600', emoji: '😟', needleDeg: 90 };
+                case 'High Stage 2': return { color: 'bg-red-600', text: 'text-red-600', emoji: '🚑', needleDeg: 135 };
+                default: return { color: 'bg-blue-500', text: 'text-blue-500', emoji: '😐', needleDeg: 0 };
+            }
+        }
+
+        // --- UI Updates ---
+
+        function updateDisplay(index) {
+            if (readings.length === 0 || index < 0 || index >= readings.length) return;
+            
+            const data = readings[index];
+            const style = getStyleConfig(data.status);
+
+            // Update Text
+            document.getElementById('displaySys').innerText = data.sys;
+            document.getElementById('displayDia').innerText = data.dia;
+            document.getElementById('displayHr').innerText = data.hr;
+            document.getElementById('displayDate').innerText = new Date(data.date).toLocaleString();
+            
+            // Update Status Banner
+            const banner = document.getElementById('statusBanner');
+            banner.className = `p-4 text-center transition-colors duration-500 ${style.color} text-white`;
+            document.getElementById('statusText').innerText = data.status;
+            
+            // Update Emoji
+            document.getElementById('statusEmoji').innerText = style.emoji;
+
+            // Update Insights
+            document.getElementById('insightsContent').innerHTML = getInsights(data.status);
+            document.getElementById('insightsCard').className = `bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6 border-l-4 ${style.color.replace('bg-', 'border-')}`;
+
+            // Update Gauge Needle
+            let needleDeg = ((data.sys - 80) / 100) * 180 - 90;
+            if(needleDeg < -90) needleDeg = -90;
+            if(needleDeg > 90) needleDeg = 90;
+            
+            document.getElementById('gaugeNeedle').style.transform = `rotate(${needleDeg}deg)`;
+
+            // Update Nav Buttons
+            document.getElementById('recordCount').innerText = `Record ${index + 1} of ${readings.length}`;
+            document.getElementById('prevBtn').disabled = index === 0;
+            document.getElementById('nextBtn').disabled = index === readings.length - 1;
+        }
+
+        function addReading() {
+            const sysInput = document.getElementById('inputSys');
+            const diaInput = document.getElementById('inputDia');
+            const hrInput = document.getElementById('inputHr');
+            
+            const sys = parseInt(sysInput.value);
+            const dia = parseInt(diaInput.value);
+            const hr = parseInt(hrInput.value);
+
+            if (!sys || !dia || !hr) {
+                playSound('alert');
+                alert("Please fill in all fields");
+                return;
+            }
+
+            const status = getStatus(sys, dia);
+            const newReading = {
+                id: Date.now(),
+                date: new Date().toISOString(),
+                sys,
+                dia,
+                hr,
+                status
+            };
+
+            readings.push(newReading);
+            currentIndex = readings.length - 1;
+            
+            playSound('success');
+            updateDisplay(currentIndex);
+            updateChart();
+            
+            // Clear inputs
+            sysInput.value = '';
+            diaInput.value = '';
+            hrInput.value = '';
+        }
+
+        // --- Chart.js Integration ---
+
+        function initChart() {
+            const ctx = document.getElementById('bpChart').getContext('2d');
+            
+            // Gradient
+            const gradientSys = ctx.createLinearGradient(0, 0, 0, 400);
+            gradientSys.addColorStop(0, 'rgba(239, 68, 68, 0.5)');
+            gradientSys.addColorStop(1, 'rgba(239, 68, 68, 0)');
+
+            const gradientDia = ctx.createLinearGradient(0, 0, 0, 400);
+            gradientDia.addColorStop(0, 'rgba(59, 130, 246, 0.5)');
+            gradientDia.addColorStop(1, 'rgba(59, 130, 246, 0)');
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Systolic',
+                            data: [],
+                            borderColor: '#ef4444',
+                            backgroundColor: gradientSys,
+                            tension: 0.4,
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Diastolic',
+                            data: [],
+                            borderColor: '#3b82f6',
+                            backgroundColor: gradientDia,
+                            tension: 0.4,
+                            fill: true,
+                            yAxisID: 'y'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: { 
+                            position: 'top',
+                            labels: {
+                                color: '#64748b'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                            padding: 12,
+                            cornerRadius: 8,
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { 
+                                maxTicksLimit: 6, 
+                                font: { size: 10 },
+                                color: '#64748b'
+                            }
+                        },
+                        y: {
+                            beginAtZero: false,
+                            min: 50,
+                            max: 200,
+                            grid: { color: '#e2e8f0' },
+                            ticks: {
+                                color: '#64748b'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChart() {
+            if (!chartInstance) return;
+
+            // Sort readings by date ascending
+            const sorted = [...readings].sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            // Format labels
+            const labels = sorted.map(r => {
+                const d = new Date(r.date);
+                return `${d.getDate()}/${d.getMonth()+1} ${d.getHours()}:${d.getMinutes().toString().padStart(2,'0')}`;
+            });
+            const sysData = sorted.map(r => r.sys);
+            const diaData = sorted.map(r => r.dia);
+
+            chartInstance.data.labels = labels;
+            chartInstance.data.datasets[0].data = sysData;
+            chartInstance.data.datasets[1].data = diaData;
+            
+            // Update grid colors based on theme
+            const isDark = document.documentElement.classList.contains('dark');
+            const gridColor = isDark ? '#334155' : '#e2e8f0';
+            const textColor = isDark ? '#94a3b8' : '#64748b';
+            
+            chartInstance.options.scales.y.grid.color = gridColor;
+            chartInstance.options.scales.x.ticks.color = textColor;
+            chartInstance.options.scales.y.ticks.color = textColor;
+            chartInstance.options.plugins.legend.labels.color = textColor;
+
+            chartInstance.update();
+        }
+
+        // --- Export Functions ---
+
+        function exportCSV() {
+            if (readings.length === 0) { 
+                playSound('alert');
+                alert("No data to export. Please log some readings first."); 
+                return; 
+            }
+            playSound('success');
+            
+            let csvContent = "Date,Systolic,Diastolic,Heart Rate,Status\n";
+            
+            readings.forEach(r => {
+                const dateStr = new Date(r.date).toLocaleString();
+                csvContent += `${dateStr},${r.sys},${r.dia},${r.hr},${r.status}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "bp_reset_report.csv");
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function exportPDF() {
+            if (readings.length === 0) { 
+                playSound('alert');
+                alert("No data to export. Please log some readings first."); 
+                return; 
+            }
+            playSound('success');
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            // Header
+            doc.setFontSize(18);
+            doc.setTextColor(239, 68, 68);
+            doc.text("BP Reset App Report", 14, 20);
+            
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            doc.text("Generated on: " + new Date().toLocaleString(), 14, 28);
+
+            // Table Data
+            const tableData = readings.map(r => [
+                new Date(r.date).toLocaleString(),
+                r.sys,
+                r.dia,
+                r.hr,
+                r.status
+            ]);
+
+            doc.autoTable({
+                startY: 35,
+                head: [['Date', 'Systolic', 'Diastolic', 'HR', 'Status']],
+                body: tableData,
+                theme: 'striped',
+                headStyles: { fillColor: [59, 130, 246] },
+                styles: { fontSize: 8 },
+                columnStyles: {
+                    0: { cellWidth: 50 },
+                    4: { cellWidth: 40 }
+                }
+            });
+
+            // Footer
+            const pageCount = doc.internal.getNumberOfPages();
+            for(let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                doc.setFontSize(8);
+                doc.setTextColor(150);
+                doc.text('© 2026 BP Reset App. For informational purposes only.', 14, doc.internal.pageSize.height - 10);
+            }
+
+            doc.save("bp_reset_report.pdf");
+        }
+
+        // --- Navigation Functions ---
+
+        function goToPrevious() {
+            if (currentIndex > 0) {
+                playSound('click');
+                currentIndex--;
+                updateDisplay(currentIndex);
+            }
+        }
+
+        function goToNext() {
+            if (currentIndex < readings.length - 1) {
+                playSound('click');
+                currentIndex++;
+                updateDisplay(currentIndex);
+            }
+        }
+
+        // --- Theme Toggle Function ---
+
+        function toggleTheme() {
+            playSound('click');
+            const html = document.documentElement;
+            html.classList.toggle('dark');
+            // Update chart colors if chart exists
+            if(chartInstance) updateChart();
+        }
+
+        // --- Initialization & Event Listeners ---
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Theme Toggle
+            const themeToggle = document.getElementById('themeToggle');
+            const html = document.documentElement;
+            
+            // Check system preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                html.classList.add('dark');
+            }
+
+            themeToggle.addEventListener('click', toggleTheme);
+
+            // Log Button
+            const logBtn = document.getElementById('logBtn');
+            logBtn.addEventListener('click', addReading);
+
+            // Navigation
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            
+            prevBtn.addEventListener('click', goToPrevious);
+            nextBtn.addEventListener('click', goToNext);
+
+            // Exports
+            const exportPdfBtn = document.getElementById('exportPdfBtn');
+            const exportCsvBtn = document.getElementById('exportCsvBtn');
+            
+            exportPdfBtn.addEventListener('click', exportPDF);
+            exportCsvBtn.addEventListener('click', exportCSV);
+
+            // Init Chart
+            initChart();
+
+            // Add sample data for demonstration
+            const now = new Date();
+            readings.push({ 
+                id: 1, 
+                date: new Date(now.getTime() - 6 * 86400000).toISOString(), 
+                sys: 118, 
+                dia: 75, 
+                hr: 68, 
+                status: 'Normal' 
+            });
+            readings.push({ 
+                id: 2, 
+                date: new Date(now.getTime() - 5 * 86400000).toISOString(), 
+                sys: 125, 
+                dia: 78, 
+                hr: 70, 
+                status: 'Elevated' 
+            });
+            readings.push({ 
+                id: 3, 
+                date: new Date(now.getTime() - 4 * 86400000).toISOString(), 
+                sys: 135, 
+                dia: 85, 
+                hr: 72, 
+                status: 'High Stage 1' 
+            });
+            readings.push({ 
+                id: 4, 
+                date: new Date(now.getTime() - 3 * 86400000).toISOString(), 
+                sys: 122, 
+                dia: 79, 
+                hr: 69, 
+                status: 'Elevated' 
+            });
+            readings.push({ 
+                id: 5, 
+                date: new Date(now.getTime() - 2 * 86400000).toISOString(), 
+                sys: 119, 
+                dia: 76, 
+                hr: 67, 
+                status: 'Normal' 
+            });
+            readings.push({ 
+                id: 6, 
+                date: new Date(now.getTime() - 1 * 86400000).toISOString(), 
+                sys: 145, 
+                dia: 92, 
+                hr: 75, 
+                status: 'High Stage 2' 
+            });
+            readings.push({ 
+                id: 7, 
+                date: now.toISOString(), 
+                sys: 128, 
+                dia: 82, 
+                hr: 71, 
+                status: 'Elevated' 
+            });
+            
+            currentIndex = readings.length - 1;
+            updateDisplay(currentIndex);
+            updateChart();
+        });
+
+    </script>
+</body>
+</html>
+
+
+
